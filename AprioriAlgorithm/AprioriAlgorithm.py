@@ -1,120 +1,101 @@
 import sys
 
-min_sup, path_input, path_output = sys.argv[1:4]
-min_sup = int(min_sup)
+min_sup, path_input, path_output = sys.argv[1:4] #argument
+min_sup = int(min_sup)/100 #Minimum Support
 
 f_input = open(path_input, "r")
 lines = f_input.read().splitlines()
 f_input.close()
-
 item_num = 0
 trans = []
 
 for line in lines:
     items = [int(i) for i in line.split('\t')]
     trans.append(items)
-item_num = max(map(max, trans)) + 1
 
-total_trans_num = len(trans)
+item_num = max(map(max, trans)) + 1 #item 종류(transaction에 있는 item 종류 중 최대값)
 
-#print (item_num)
+total_trans_num = len(trans) #전체 transaction의 길이
 
-def find_support(itemset, transactions): #transactions 중 itemset이 차지하는 비율
+#support = 전체 transactions에서 itemset이 포함된 transaction의 비율
+def find_support(itemset): 
     sup_count = 0
-    for transaction in transactions:
+    for transaction in trans:
         if set(transaction).issuperset(set(itemset)): #transation이 itemset을 포함할 경우
             sup_count += 1
     return sup_count/total_trans_num # support = sup_count / 전체 거래 수
 
-def find_confidence(x, y, transactions):
-    return find_support(x|y,transactions)/find_support(x,transactions)
+
+#confidence = X->Y의 Association Rule에서 X를 가진 transaction이 Y도 가질 조건적확률
+def find_confidence(rule): 
+    return find_support(rule[0]|rule[1])/find_support(rule[0]) #계산은 Sup(X,Y)/Sup(X)
 
 
-### 조합으로 찾기 실패 - 계산량 너무 많음
-#### candidate의 합집합의 집합으로
-#pruned_sets 대신 frequent_item_sets으로
-
-'''
-def get_candidates(itemsets, n, pruned_sets):#candidates를 생성하는 generator
-    for i in range(len(itemsets)):  
-        if n == 1:
-            yield [itemsets[i]]
-        else:
-            for next in get_candidates(itemsets[i+1:], n-1, pruned_sets):
-                items = [itemsets[i]] + next
-                if not pruned_sets: #비어있으면
-                    yield items
-                pruned_check = False
-                for pruned_set in pruned_sets:
-                    if set(items).issuperset(set(pruned_set)): #items가 pruned_sets 중 하나의 superset이라면
-                        pruned_check = True #items가 제외되었기 때문에 yield하지 않고 다음 후보로 넘어감
-                if pruned_check:
-                    continue
-                else:
-                    yield items
-'''
-
+#실제 Apriori 구현
 def Apriori(candidates, pruned_sets):
-    new_candidates = []
-    new_pruned_sets = []
+
+    #next sets initialize
+    next_candidates = []
+    next_pruned_sets = []
+
     for i in range(len(candidates)):
-        itemset = set(candidates[i]) #support를 계산할 itemset
+        candidate = set(candidates[i])          #support를 계산할 candidate
+        
         for j in range(i+1, len(candidates)):
-            #import pdb; pdb.set_trace()
-            original_itemset = itemset.copy()
-            itemset = itemset | set(candidates[j]) #중복 제거한 set
             
-            if itemset in new_candidates or itemset in new_pruned_sets: #이미 검사된 itemset이라면 패스
+            original_candidate = candidate.copy()         #계산 후 복구할 original candidate
+            candidate = candidate | set(candidates[j])  #합집합 set
+
+            #1. 이미 검사된 candidate이라면 패스
+            if candidate in next_candidates or candidate in next_pruned_sets: 
                 continue
             
+            #2. candidate가 pruned_sets 중 하나의 superset이라면 패스
             pruned_check = False #pruned 여부
             for pruned_set in pruned_sets:
-                if itemset.issuperset(set(pruned_set)): #itemset가 pruned_sets 중 하나의 superset이라면
+                if candidate.issuperset(set(pruned_set)): 
                     pruned_check = True
                     break
             if pruned_check:
-                continue #pruned된 itemset이면 no check
-            
-            if find_support(itemset, trans) >= min_sup/100:
-                new_candidates.append(itemset.copy())
-            else:
-                new_pruned_sets.append(itemset.copy())
-            itemset = original_itemset #원래대로
+                continue
 
-    ''' 
-    for candidate in new_candidates:
-        print(f"{candidate}\t{find_support(candidate,trans)}\n")
-    '''
-        
-    if(new_candidates == []): #모든 candidate가 pruned되었을 때
-        #import pdb; pdb.set_trace()
+            #3. 
+            if find_support(candidate) >= min_sup: #Minimum Support를 만족하면 next_candidates로 copy
+                next_candidates.append(candidate.copy())
+            else:                                  #만족하지 못하면 next_pruned_sets로 copy
+                next_pruned_sets.append(candidate.copy())
+                
+            candidate = original_candidate #원래값으로
+
+    if(next_candidates == []):#모든 candidate가 pruned되어 next_candidate가 생성되지 않을 때
         return candidates
-    else:
-        #import pdb; pdb.set_trace()
-        return Apriori(new_candidates, new_pruned_sets) + candidates
+    else:                     #new_candidates가 있다면 recursive하게 candidates를 추가함
+        return Apriori(next_candidates, next_pruned_sets) + candidates 
 
 
-
-def get_rule_sets(iterable):
+#itemsets에서 association rules set을 가져오는 함수
+def get_rule_sets(itemsets):                
     from itertools import chain, combinations
-    s = list(iterable)
+    s = list(itemsets)
+    
+    #get Powerset of itemsets
     powerset = list(chain.from_iterable(combinations(s, r) for r in range(1, len(s))))
-    return [(set(powerset[i]), set(powerset[len(powerset) - 1 - i])) for i in range(len(powerset))]
+    
+    #대응하는 subsets끼리 묶어서 return
+    return [(set(powerset[i]), set(powerset[len(powerset) - 1 - i])) for i in range(len(powerset))] 
 
 
 items = list(range(item_num)) #기본 items
 
-frequent_item_sets = [[item] for item in items if find_support([item],trans) >= min_sup/100] #1-itemsets
-frequent_item_sets = [sorted(list(sets)) for sets in Apriori(frequent_item_sets, []) if list(sets) not in frequent_item_sets]
-#print(frequent_item_sets)
+frequent_itemsets = [[item] for item in items if find_support([item]) >= min_sup] #1-itemsets
+frequent_itemsets = [sorted(list(sets)) for sets in Apriori(frequent_itemsets, []) if list(sets) not in frequent_itemsets]
 
 f_output = open(path_output, "w")
 
 i = 0
-for frequent_item_set in frequent_item_sets:
-    for rule in get_rule_sets(frequent_item_set):
-        #f_output.write(f"{rule[0]}\t{rule[1]}\t{round(find_support(frequent_item_set,trans)*100,2)}\t{round(find_confidence(rule[0],rule[1],trans)*100,2)}\n")
-        print(rule[0],rule[1],format(find_support(frequent_item_set,trans)*100,".2f"),format(find_confidence(rule[0],rule[1],trans)*100,".2f"),sep='\t',file=f_output)
+for frequent_itemset in frequent_itemsets:
+    for rule in get_rule_sets(frequent_itemset):
+        print(rule[0],rule[1],format(find_support(frequent_itemset)*100,".2f"),format(find_confidence(rule)*100,".2f"),sep='\t',file=f_output)
 
-
+f_output.close()
 
